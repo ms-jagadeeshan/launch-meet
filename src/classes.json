@@ -1,0 +1,38 @@
+[
+    {
+        "created": "2022-01-03T11:35:09+05:30",
+        "updated": "2022-01-03T11:38:45+05:30",
+        "summary": "Sample meet",
+        "url": "https://meet.google.com/dab-adk-ealk",
+        "authuser": 0,
+        "browser": "default",
+        "description": "This is the meet for test the code",
+        "timings": [
+            {
+                "start": "2022-01-03T11:00:39+05:30",
+                "end": "2022-01-03T12:00:39+05:30"
+            }
+        ],
+        "repeatation": true,
+        "repeatation_time": "weekly",
+        "expiry_date": "2022-04-03T12:00:39+05:30"
+    },
+    {
+        "created": "2022-01-03T11:35:09+05:30",
+        "updated": "2022-01-03T11:38:45+05:30",
+        "summary": "Sample meet",
+        "url": "https://meet.google.com/dab-adk-ealk",
+        "authuser": 0,
+        "browser": "default",
+        "description": "This is the meet for test the code",
+        "timings": [
+            {
+                "start": "2022-01-03T11:00:39+05:30",
+                "end": "2022-01-03T12:00:39+05:30"
+            }
+        ],
+        "repeatation": true,
+        "repeatation_time": "weekly",
+        "expiry_date": "2022-04-03T12:00:39+05:30"
+    }
+]
