@@ -3,7 +3,7 @@
         "id": 1,
         "created": "2022-01-03T11:35:09+0530",
         "updated": "2022-01-03T11:38:45+0530",
-        "summary": "Sample meet",
+        "title": "Sample meet",
         "url": "https://meet.google.com/dab-adk-ealk",
         "authuser": 0,
         "browser": "default",
@@ -14,15 +14,15 @@
                 "end": "2022-01-03T12:00:39+0530"
             }
         ],
-        "repeatation": true,
-        "repeatation_interval": "weekly",
+        "repeatition": true,
+        "repeatition_interval": "weekly",
         "expiry_date": "2022-01-22T11:02:48+0530"
     },
     {
         "id": 2,
         "created": "2022-01-03T11:35:09+0530",
         "updated": "2022-01-03T11:38:45+0530",
-        "summary": "Sample meet",
+        "title": "Sample meet",
         "url": "https://meet.google.com/dab-adk-ealk",
         "authuser": 0,
         "browser": "default",
@@ -33,8 +33,8 @@
                 "end": "2022-01-03T12:00:39+0530"
             }
         ],
-        "repeatation": true,
-        "repeatation_interval": "weekly",
+        "repeatition": true,
+        "repeatition_interval": "weekly",
         "expiry_date": "2022-04-03T12:00:39+0530"
     }
 ]
