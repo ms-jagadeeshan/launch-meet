@@ -1,22 +1,50 @@
 #include <iostream>
 #include <fstream>
 #include <list>
-#include <unistd.h> // execl
+#include <random>
+#include <unistd.h> // execl(), fork()
 #include <stdlib.h>
 #include <time.h>
+#include <getopt.h>
+#include <sys/stat.h> // mkdir
 #include "json.hpp"
+
+#ifdef __linux__
+
+#define HOME std::string(std::getenv("HOME")).c_str()
+
+#define EVENT_PATH std::string(HOME).append("/.local/share/launch-meet").c_str()
+#define EVENT_FILE_PATH std::string(EVENT_PATH).append("/events.json").c_str()
+
+#define CACHE_PATH std::string(HOME).append("/.cache/launch-meet").c_str()
+#define EVENT_CACHE_PATH std::string(CACHE_PATH).append("/event_cache.json").c_str()
+#define EVENT_DETAILS_CACHE_PATH std::string(CACHE_PATH).append("/details_cache.json").c_str()
+
+#define CONFIG_PATH std::string(HOME).append("/.config/launch-meet").c_str()
+#define CONFIG_FILE_PATH std::string(CONFIG_PATH).append("/config.json").c_str()
+
+#elif _WIN32
+
+#define EVENT_FILE_PATH "events.json"
+#define EVENT_CACHE_PATH "event_cache.json"
+#define EVENT_DETAILS_CACHE_PATH "details_cache.json"
+#define CONFIG_FILE_PATH "config.json"
+#else
+
+#endif
+// Paths of cache,config,events
 
 #define DAY_SEC 86400 // No. of seconds in a day
 // function prototype
-time_t string_to_epoch(const std::string &time_str);
-std::string inc_month(const std::string &cur_time, const std::string &start_time);
-std::string get_now(const time_t offset = 0);
-std::string epoch_to_string(const time_t &epoch);
-void inc_month(std::string &start_time);
+time_t stringToEpoch(const std::string &time_str);
+std::string incMonth(const std::string &cur_time, const std::string &start_time);
+std::string getNow(const time_t offset = 0);
+std::string epochToString(const time_t &epoch);
+void incMonth(std::string &start_time);
 
 namespace lmspace
 {
-    struct event
+    struct timings
     {
         std::string end;
         std::string id;
@@ -33,41 +61,107 @@ namespace lmspace
     };
 
     // Function prototypes
-
-    bool event_priority(lmspace::event first, lmspace::event second);
+    bool eventPriority(lmspace::timings first, lmspace::timings second);
     bool isExpired(nlohmann::detail::iter_impl<nlohmann::json> &itr, std::string &current_time);
-    void clean(nlohmann::json &j);
-    void json_to_details(nlohmann::detail::iter_impl<nlohmann::json> &itr, struct details &event_detail);
-    void json_to_map(const nlohmann::json &j, std::map<std::string, lmspace::details> &event_details_cache);
-    void json_to_list(const nlohmann::json &j, std::list<lmspace::event> &event_list_cache);
-    void list_to_json(nlohmann::json &j, const std::list<lmspace::event> &event_list_cache);
-    void map_to_json(nlohmann::json &j, const std::map<std::string, lmspace::details> &event_details_cache);
-    void update_cache(std::list<lmspace::event> &event_list_cache, std::map<std::string, lmspace::details> &event_details_cache);
-    void update_days_cache(nlohmann::detail::iter_impl<nlohmann::json> &event_ptr, std::list<lmspace::event> &event_list_cache, std::map<std::string, lmspace::details> &event_details_cache, int rep_interval);
-    void update_monthly_cache(nlohmann::detail::iter_impl<nlohmann::json> &event_ptr, std::list<lmspace::event> &event_list_cache, std::map<std::string, lmspace::details> &event_details_cache);
-    void update_yearly_cache(nlohmann::detail::iter_impl<nlohmann::json> &event_ptr, std::list<lmspace::event> &event_list_cache, std::map<std::string, lmspace::details> &event_details_cache);
-    void load_cache(std::list<lmspace::event> &event_list_cache, std::map<std::string, lmspace::details> &event_details_cache);
-    void write_cache(const std::list<lmspace::event> &event_list_cache, const std::map<std::string, lmspace::details> &event_details_cache);
-    void launch_event(const lmspace::event &e, const lmspace::details &d);
-    void print_details(const lmspace::event &e, const lmspace::details &d);
+    void clean();
+    void init();
+    void json2details(nlohmann::detail::iter_impl<nlohmann::json> &itr, struct details &event_detail);
+    void json2list(const nlohmann::json &j, std::list<lmspace::timings> &event_list_cache);
+    void json2map(const nlohmann::json &j, std::map<std::string, lmspace::details> &event_details_cache);
+    void launchEvent(const lmspace::timings &e, const lmspace::details &d);
+    void list2json(nlohmann::json &j, const std::list<lmspace::timings> &event_list_cache);
+    void loadCache(std::list<lmspace::timings> &event_list_cache, std::map<std::string, lmspace::details> &event_details_cache);
+    void map2json(nlohmann::json &j, const std::map<std::string, lmspace::details> &event_details_cache);
+    void printDetails(const lmspace::timings &e, const lmspace::details &d);
+    void updateSingleCache(nlohmann::detail::iter_impl<nlohmann::json> &event_ptr, std::list<lmspace::timings> &event_list_cache, std::map<std::string, lmspace::details> &event_details_cache);
+    void updateCache(std::list<lmspace::timings> &event_list_cache, std::map<std::string, lmspace::details> &event_details_cache);
+    void updateDaysCache(nlohmann::detail::iter_impl<nlohmann::json> &event_ptr, std::list<lmspace::timings> &event_list_cache, std::map<std::string, lmspace::details> &event_details_cache, int rep_interval);
+    void updateMonthlyCache(nlohmann::detail::iter_impl<nlohmann::json> &event_ptr, std::list<lmspace::timings> &event_list_cache, std::map<std::string, lmspace::details> &event_details_cache);
+    void updateYearlyCache(nlohmann::detail::iter_impl<nlohmann::json> &event_ptr, std::list<lmspace::timings> &event_list_cache, std::map<std::string, lmspace::details> &event_details_cache);
+    void writeCache(const std::list<lmspace::timings> &event_list_cache, const std::map<std::string, lmspace::details> &event_details_cache);
 
     // Functions
 
-    //  Function to clean the expired events.
-    void clean(nlohmann::json &j)
+    void init()
     {
-        std::string current_time = get_now();
+#ifdef __linux__
+        // Creating all the required directories
+        pid_t pid = fork();
+        if (!pid)
+            execl("/usr/bin/mkdir", "/usr/bin/mkdir", "-m=700", "-p", EVENT_PATH, (char *)0);
+
+        pid = fork();
+        if (!pid)
+            execl("/usr/bin/mkdir", "mkdir", "-m=700", "-p", CACHE_PATH, (char *)0);
+
+        pid = fork();
+        if (!pid)
+            execl("/usr/bin/mkdir", "mkdir", "-m=700", "-p", CONFIG_PATH, (char *)0);
+#endif
+
+        // Initializing the required files
+        std::ifstream input(EVENT_FILE_PATH);
+        if (!input.is_open())
+        {
+            input.close();
+            std::ofstream output(EVENT_FILE_PATH);
+            output << "[\n]";
+            output.close();
+        }
+        input.close();
+        input.open(CONFIG_FILE_PATH);
+        if (!input.is_open())
+        {
+            input.close();
+            std::ofstream output(CONFIG_FILE_PATH);
+            auto conf_json = R"(
+{
+    "auto-launch": true,
+    "default": {
+        "repeatition": false,
+        "authuser": 0,
+        "browser": "default",
+        "description": "No description provided",
+        "expiry_date": "",
+        "repeatition_interval": "1",
+        "title": "Sample Title",
+        "url": "https://example.com"
+    }
+}
+)"_json;
+            output << conf_json.dump(4);
+            output.close();
+        }
+        input.close();
+    }
+
+    //  Function to clean the expired events.
+    void clean()
+    {
+        nlohmann::json j;
+        std::ifstream input(EVENT_FILE_PATH);
+        if (!input.is_open())
+        {
+            std::cerr << "launch-meet : cannot access \'" << EVENT_FILE_PATH << "\' : " << strerror(errno) << '\n';
+            exit(1);
+        }
+        input >> j;
+        input.close();
+        std::string current_time = getNow();
         for (nlohmann::json::iterator event_ptr = j.begin(); event_ptr != j.end(); ++event_ptr)
         {
             auto expiry_date = (*event_ptr)["expiry_date"].get<std::string>();
             if (expiry_date < current_time)
                 j.erase(event_ptr);
         }
+        std::ofstream output(EVENT_FILE_PATH);
+        output << j.dump(4);
     }
-    void load_cache(std::list<lmspace::event> &event_list_cache, std::map<std::string, lmspace::details> &event_details_cache)
+
+    void loadCache(std::list<lmspace::timings> &event_list_cache, std::map<std::string, lmspace::details> &event_details_cache)
     {
-        std::ifstream evlist_in("cache.json");
-        std::ifstream dt_in("details_cache.json");
+        std::ifstream evlist_in(EVENT_CACHE_PATH);
+        std::ifstream dt_in(EVENT_DETAILS_CACHE_PATH);
         if (evlist_in.is_open())
         {
             if (dt_in.is_open())
@@ -75,25 +169,20 @@ namespace lmspace
                 nlohmann::json ev_json, dt_json;
                 evlist_in >> ev_json;
                 dt_in >> dt_json;
-                lmspace::json_to_list(ev_json, event_list_cache);
-                lmspace::json_to_map(dt_json, event_details_cache);
+                evlist_in.close();
+                dt_in.close();
+                lmspace::json2list(ev_json, event_list_cache);
+                lmspace::json2map(dt_json, event_details_cache);
             }
-            else
-            {
-                std::cerr << "Cache file not found!\n";
-            }
-        }
-        else
-        {
-            std::cerr << "Cache file not found!\n";
         }
     }
-    void print_details(const lmspace::event &e, const lmspace::details &d)
+
+    void printDetails(const lmspace::timings &e, const lmspace::details &d)
     {
         time_t start_epoch = 0, end_epoch = 0, cur_epoch = 0;
         time(&cur_epoch);
-        start_epoch = string_to_epoch(e.start);
-        end_epoch = string_to_epoch(e.end);
+        start_epoch = stringToEpoch(e.start);
+        end_epoch = stringToEpoch(e.end);
         if (cur_epoch < start_epoch)
         {
             std::cout << "Next Event Details\n";
@@ -103,7 +192,7 @@ namespace lmspace
             std::cout << "End  time  : " << asctime(localtime(&end_epoch));
             std::cout << "Waiting " << (start_epoch - cur_epoch) / 60 << " minutes...";
             sleep(start_epoch - cur_epoch);
-            std::cout << "Opening " << d.url << "\n\n";
+            std::cout << "Opening \"" << d.url << "\"\n\n";
         }
         else if (cur_epoch < end_epoch)
         {
@@ -116,28 +205,31 @@ namespace lmspace
         }
     }
 
-    void launch_event(const lmspace::event &e, const lmspace::details &d)
+    void launchEvent(const lmspace::timings &e, const lmspace::details &d)
     {
-        lmspace::print_details(e, d);
-        std::string path,exec_name;
+        lmspace::printDetails(e, d);
+        std::string path, exec_name;
         if (d.browser == "default")
         {
             path = "/usr/bin/xdg-open";
-            exec_name="xdg-open";
+            exec_name = "xdg-open";
         }
         else if (d.browser == "waterfox")
         {
             path = "/usr/local/bin/waterfox/waterfox";
-            exec_name="waterfox";
+            exec_name = "waterfox";
         }
         else
         {
             path = "/usr/bin/";
             path.append(d.browser);
-            exec_name=d.browser;
+            exec_name = d.browser;
         }
-        execl(path.c_str(),exec_name.c_str(), d.url.c_str(), (char *)0);
+        pid_t pid = fork();
+        if (!pid)
+            execl(path.c_str(), exec_name.c_str(), d.url.c_str(), (char *)0);
     }
+
     // Function to check whether event expired or not
     bool isExpired(nlohmann::detail::iter_impl<nlohmann::json> &itr, std::string &current_time)
     {
@@ -145,22 +237,22 @@ namespace lmspace
         return expiry_date < current_time;
     }
 
-    void write_cache(const std::list<lmspace::event> &event_list_cache, const std::map<std::string, lmspace::details> &event_details_cache)
+    void writeCache(const std::list<lmspace::timings> &event_list_cache, const std::map<std::string, lmspace::details> &event_details_cache)
     {
         nlohmann::json cache_json, dt_json;
-        lmspace::list_to_json(cache_json, event_list_cache);
-        lmspace::map_to_json(dt_json, event_details_cache);
+        lmspace::list2json(cache_json, event_list_cache);
+        lmspace::map2json(dt_json, event_details_cache);
 
         // Writing to cache.json
-        std::ofstream evlist_out("cache.json");
+        std::ofstream evlist_out(EVENT_CACHE_PATH);
         evlist_out << cache_json.dump(4);
 
         // Writing details cache to file
-        std::ofstream dvlist("details_cache.json");
+        std::ofstream dvlist(EVENT_DETAILS_CACHE_PATH);
         dvlist << dt_json.dump(4).c_str();
     }
 
-    void json_to_details(const nlohmann::detail::iter_impl<nlohmann::json> &itr, struct details &event_detail)
+    void json2details(const nlohmann::detail::iter_impl<nlohmann::json> &itr, struct details &event_detail)
     {
         (*itr).at("authuser").get_to(event_detail.authuser);
         (*itr).at("browser").get_to(event_detail.browser);
@@ -169,32 +261,32 @@ namespace lmspace
         (*itr).at("url").get_to(event_detail.url);
     }
 
-    void json_to_event(const nlohmann::detail::iter_impl<nlohmann::json> &itr, struct event &event_time)
+    void json2timings(const nlohmann::detail::iter_impl<nlohmann::json> &itr, struct lmspace::timings &event_time)
     {
         (*itr).at("start").get_to(event_time.start);
         (*itr).at("id").get_to(event_time.id);
         (*itr).at("end").get_to(event_time.end);
     }
 
-    void json_to_list(const nlohmann::json &j, std::list<lmspace::event> &event_list_cache)
+    void json2list(const nlohmann::json &j, std::list<lmspace::timings> &event_list_cache)
     {
         for (auto itr = j.begin(); itr != j.end(); ++itr)
             event_list_cache.push_back({(*itr)["end"], (*itr)["id"], (*itr)["start"]});
     }
 
-    void list_to_json(nlohmann::json &j, const std::list<lmspace::event> &event_list_cache)
+    void list2json(nlohmann::json &j, const std::list<lmspace::timings> &event_list_cache)
     {
         for (auto itr = event_list_cache.begin(); itr != event_list_cache.end(); ++itr)
             j.push_back({{"id", itr->id}, {"start", itr->start}, {"end", itr->end}});
     }
 
-    void json_to_map(const nlohmann::json &j, std::map<std::string, lmspace::details> &event_details_cache)
+    void json2map(const nlohmann::json &j, std::map<std::string, lmspace::details> &event_details_cache)
     {
         for (auto itr = j.begin(); itr != j.end(); ++itr)
             event_details_cache[itr.key()] = {(*itr)["authuser"], (*itr)["browser"], (*itr)["description"], (*itr)["title"], (*itr)["url"]};
     }
 
-    void map_to_json(nlohmann::json &j, const std::map<std::string, lmspace::details> &event_details_cache)
+    void map2json(nlohmann::json &j, const std::map<std::string, lmspace::details> &event_details_cache)
     {
         for (std::map<std::string, lmspace::details>::const_iterator itr = event_details_cache.begin(); itr != event_details_cache.end(); ++itr)
             j[itr->first] = {{"authuser", itr->second.authuser}, {"description", itr->second.description}, {"title", itr->second.browser}, {"browser", itr->second.browser}, {"url", itr->second.url}};
@@ -217,7 +309,7 @@ namespace lmspace
     }
 
     // Updates cache for "yearly" type of repetition
-    void update_yearly_cache(nlohmann::detail::iter_impl<nlohmann::json> &event_ptr, std::list<lmspace::event> &event_list_cache, std::map<std::string, lmspace::details> &event_details_cache)
+    void updateYearlyCache(nlohmann::detail::iter_impl<nlohmann::json> &event_ptr, std::list<lmspace::timings> &event_list_cache, std::map<std::string, lmspace::details> &event_details_cache)
     {
         std::string expiry_date = (*event_ptr)["expiry_date"];
         std::string id = (*event_ptr)["id"];
@@ -225,11 +317,11 @@ namespace lmspace
 
         for (nlohmann::json::iterator timing_itr = timings.begin(); timing_itr != timings.end(); ++timing_itr)
         {
-            std::string cur_time = get_now();
-            std::string cache_limit_time = get_now(2678400L);
+            std::string cur_time = getNow();
+            std::string cache_limit_time = getNow(2678400L);
             std::string start_time = (*timing_itr)["start"];
             std::string end_time = (*timing_itr)["end"];
-            time_t meet_duration = string_to_epoch(end_time) - string_to_epoch(start_time);
+            time_t meet_duration = stringToEpoch(end_time) - stringToEpoch(start_time);
             while (start_time < expiry_date)
             {
                 if (start_time < cur_time)
@@ -243,7 +335,7 @@ namespace lmspace
                                                        (*event_ptr)["browser"],
                                                        (*event_ptr)["description"],
                                                        (*event_ptr)["title"],
-                                                       urlUpdate(event_ptr)};
+                                                       lmspace::urlUpdate(event_ptr)};
                         }
                     }
                     else
@@ -256,7 +348,7 @@ namespace lmspace
                             cur_year = std::to_string(atoi(start_year.c_str()) + 1);
                         }
                         start_time.replace(start_time.begin(), start_time.begin() + 3, cur_year);
-                        end_time = epoch_to_string(string_to_epoch(start_time) + meet_duration);
+                        end_time = epochToString(stringToEpoch(start_time) + meet_duration);
                     }
                 }
                 else
@@ -270,7 +362,7 @@ namespace lmspace
                                                        (*event_ptr)["browser"],
                                                        (*event_ptr)["description"],
                                                        (*event_ptr)["title"],
-                                                       urlUpdate(event_ptr)};
+                                                       lmspace::urlUpdate(event_ptr)};
                         }
                         break;
                     }
@@ -281,7 +373,7 @@ namespace lmspace
     }
 
     // Updates cache for "monthly" type of repetition
-    void update_monthly_cache(nlohmann::detail::iter_impl<nlohmann::json> &event_ptr, std::list<lmspace::event> &event_list_cache, std::map<std::string, lmspace::details> &event_details_cache)
+    void updateMonthlyCache(nlohmann::detail::iter_impl<nlohmann::json> &event_ptr, std::list<lmspace::timings> &event_list_cache, std::map<std::string, lmspace::details> &event_details_cache)
     {
         std::string expiry_date = (*event_ptr)["expiry_date"];
         std::string id = (*event_ptr)["id"];
@@ -289,11 +381,11 @@ namespace lmspace
 
         for (nlohmann::json::iterator timing_itr = timings.begin(); timing_itr != timings.end(); ++timing_itr)
         {
-            std::string cur_time = get_now();
-            std::string cache_limit_time = get_now(2678400L);
+            std::string cur_time = getNow();
+            std::string cache_limit_time = getNow(2678400L);
             std::string start_time = (*timing_itr)["start"];
             std::string end_time = (*timing_itr)["end"];
-            time_t meet_duration = string_to_epoch(end_time) - string_to_epoch(start_time);
+            time_t meet_duration = stringToEpoch(end_time) - stringToEpoch(start_time);
             while (start_time < expiry_date)
             {
                 if (start_time < cur_time)
@@ -307,13 +399,13 @@ namespace lmspace
                                                        (*event_ptr)["browser"],
                                                        (*event_ptr)["description"],
                                                        (*event_ptr)["title"],
-                                                       urlUpdate(event_ptr)};
+                                                       lmspace::urlUpdate(event_ptr)};
                         }
                     }
                     else
                     {
-                        start_time = inc_month(cur_time, start_time);
-                        end_time = epoch_to_string(string_to_epoch(start_time) + meet_duration);
+                        start_time = incMonth(cur_time, start_time);
+                        end_time = epochToString(stringToEpoch(start_time) + meet_duration);
                     }
                 }
                 else
@@ -327,10 +419,10 @@ namespace lmspace
                                                        (*event_ptr)["browser"],
                                                        (*event_ptr)["description"],
                                                        (*event_ptr)["title"],
-                                                       urlUpdate(event_ptr)};
+                                                       lmspace::urlUpdate(event_ptr)};
                         }
-                        inc_month(start_time);
-                        end_time = epoch_to_string(string_to_epoch(start_time) + meet_duration);
+                        incMonth(start_time);
+                        end_time = epochToString(stringToEpoch(start_time) + meet_duration);
                     }
                     else
                     {
@@ -342,7 +434,7 @@ namespace lmspace
     }
 
     // Updates cache part for "n" type of repetition
-    void update_days_cache(nlohmann::detail::iter_impl<nlohmann::json> &event_ptr, std::list<lmspace::event> &event_list_cache, std::map<std::string, lmspace::details> &event_details_cache, int rep_interval)
+    void updateDaysCache(nlohmann::detail::iter_impl<nlohmann::json> &event_ptr, std::list<lmspace::timings> &event_list_cache, std::map<std::string, lmspace::details> &event_details_cache, int rep_interval)
     {
         std::string expiry_date = (*event_ptr)["expiry_date"];
         std::string id = (*event_ptr)["id"];
@@ -352,12 +444,12 @@ namespace lmspace
         for (nlohmann::json::iterator timing_itr = timings.begin(); timing_itr != timings.end(); ++timing_itr)
         {
 
-            std::string cur_time = get_now();
-            std::string cache_limit_time = get_now(2678400L);
+            std::string cur_time = getNow();
+            std::string cache_limit_time = getNow(2678400L);
             std::string start_time = (*timing_itr)["start"];
             std::string end_time = (*timing_itr)["end"];
             // Meet duration in epoch
-            time_t meet_duration = string_to_epoch(end_time) - string_to_epoch(start_time);
+            time_t meet_duration = stringToEpoch(end_time) - stringToEpoch(start_time);
 
             while (start_time < expiry_date)
             {
@@ -371,19 +463,19 @@ namespace lmspace
                                                        (*event_ptr)["browser"],
                                                        (*event_ptr)["description"],
                                                        (*event_ptr)["title"],
-                                                       urlUpdate(event_ptr)};
+                                                       lmspace::urlUpdate(event_ptr)};
                     }
                     else
                     {
                         time_t start_epoch = 0, cur_epoch = 0;
-                        start_epoch = string_to_epoch(start_time);
-                        cur_epoch = string_to_epoch(cur_time);
+                        start_epoch = stringToEpoch(start_time);
+                        cur_epoch = stringToEpoch(cur_time);
                         int offset = (int)((cur_epoch - start_epoch) / epoch_offset);
                         start_epoch += (offset * epoch_offset);
                         if ((start_epoch + meet_duration) < cur_epoch)
                             start_epoch += epoch_offset;
-                        start_time = epoch_to_string(start_epoch);
-                        end_time = epoch_to_string(start_epoch + meet_duration);
+                        start_time = epochToString(start_epoch);
+                        end_time = epochToString(start_epoch + meet_duration);
                     }
                 }
                 else
@@ -397,11 +489,11 @@ namespace lmspace
                                                        (*event_ptr)["browser"],
                                                        (*event_ptr)["description"],
                                                        (*event_ptr)["title"],
-                                                       urlUpdate(event_ptr)};
+                                                       lmspace::urlUpdate(event_ptr)};
                         }
-                        time_t start_epoch = string_to_epoch(start_time);
-                        start_time = epoch_to_string(start_epoch + epoch_offset);
-                        end_time = epoch_to_string(start_epoch + epoch_offset + meet_duration);
+                        time_t start_epoch = stringToEpoch(start_time);
+                        start_time = epochToString(start_epoch + epoch_offset);
+                        end_time = epochToString(start_epoch + epoch_offset + meet_duration);
                     }
                     else
                     {
@@ -413,80 +505,281 @@ namespace lmspace
     }
 
     // Priority determining function for events
-    bool event_priority(lmspace::event first, lmspace::event second)
+    bool eventPriority(lmspace::timings first, lmspace::timings second)
     {
         return first.start < second.start;
     }
 
     // Updates cache for single time event
-    void update_single_cache(nlohmann::detail::iter_impl<nlohmann::json> &event_ptr, std::list<lmspace::event> &event_list_cache, std::map<std::string, lmspace::details> &event_details_cache)
+    void updateSingleCache(nlohmann::detail::iter_impl<nlohmann::json> &event_ptr, std::list<lmspace::timings> &event_list_cache, std::map<std::string, lmspace::details> &event_details_cache)
     {
         auto timings = (*event_ptr)["timings"];
         std::string id = (*event_ptr)["id"];
-        std::string cache_limit_time = get_now(2678400L);
+        std::string cache_limit_time = getNow(2678400L);
         for (nlohmann::json::iterator timing_itr = timings.begin(); timing_itr != timings.end(); ++timing_itr)
         {
 
             std::string start_time = (*timing_itr)["start"];
             std::string end_time = (*timing_itr)["end"];
-            if (start_time < cache_limit_time)
+
+            // If start time is beyond cache limit
+            if (start_time > cache_limit_time)
             {
-                event_list_cache.push_back({end_time, id, start_time});
-                if (event_details_cache.find(id) == event_details_cache.end())
-                    event_details_cache[id] = {(*event_ptr)["authuser"],
-                                               (*event_ptr)["browser"],
-                                               (*event_ptr)["description"],
-                                               (*event_ptr)["title"],
-                                               urlUpdate(event_ptr)};
+                continue;
             }
+
+            // If start time is within cache limit
+            event_list_cache.push_back({end_time, id, start_time});
+            if (event_details_cache.find(id) == event_details_cache.end())
+                event_details_cache[id] = {(*event_ptr)["authuser"],
+                                           (*event_ptr)["browser"],
+                                           (*event_ptr)["description"],
+                                           (*event_ptr)["title"],
+                                           lmspace::urlUpdate(event_ptr)};
         }
     }
 
     // Updates cache.json and details.json
-    void update_cache(std::list<lmspace::event> &event_list_cache, std::map<std::string, lmspace::details> &event_details_cache)
+    void updateCache(std::list<lmspace::timings> &event_list_cache, std::map<std::string, lmspace::details> &event_details_cache)
     {
         nlohmann::json j;
-        std::ifstream input("events.json");
+        std::ifstream input(EVENT_FILE_PATH);
+        if (!input.is_open())
+        {
+            std::cerr << "launch-meet : cannot access \'" << EVENT_FILE_PATH << "\' : " << strerror(errno) << '\n';
+            exit(1);
+        }
         input >> j;
-        std::string current_time = get_now();
+        std::string current_time = getNow();
 
         for (nlohmann::json::iterator event_ptr = j.begin(); event_ptr != j.end(); ++event_ptr)
         {
-            // if not expired
-            if (!lmspace::isExpired(event_ptr, current_time))
+            // If expired
+            if (lmspace::isExpired(event_ptr, current_time))
             {
-                bool isRepeatitive = (*event_ptr)["repeatition"];
-                if (isRepeatitive)
-                {
-                    std::string rep_interval = (*event_ptr)["repeatition_interval"];
-                    if (rep_interval == "yearly")
-                        update_yearly_cache(event_ptr, event_list_cache, event_details_cache);
-                    else if (rep_interval == "monthly")
-                        update_monthly_cache(event_ptr, event_list_cache, event_details_cache);
-                    else if (rep_interval == "weekly")
-                        update_days_cache(event_ptr, event_list_cache, event_details_cache, 7);
-                    else if (rep_interval == "daily")
-                        update_days_cache(event_ptr, event_list_cache, event_details_cache, 1);
-                    else if (atoi(rep_interval.c_str()) < 100 && atoi(rep_interval.c_str()) > 0)
-                        update_days_cache(event_ptr, event_list_cache, event_details_cache, atoi(rep_interval.c_str()));
-                    else
-                    {
-                        std::cerr << "Repeatition interval not in correct format\n";
-                        std::cerr << "So taking repatition interval as 1\n";
-                        update_days_cache(event_ptr, event_list_cache, event_details_cache, 1);
-                    }
-                }
+                continue;
+            }
+
+            // If not expired
+            bool isRepeatitive = (*event_ptr)["repeatition"];
+            if (isRepeatitive)
+            {
+                std::string rep_interval = (*event_ptr)["repeatition_interval"];
+                if (rep_interval == "yearly")
+                    lmspace::updateYearlyCache(event_ptr, event_list_cache, event_details_cache);
+                else if (rep_interval == "monthly")
+                    lmspace::updateMonthlyCache(event_ptr, event_list_cache, event_details_cache);
+                else if (rep_interval == "weekly")
+                    lmspace::updateDaysCache(event_ptr, event_list_cache, event_details_cache, 7);
+                else if (rep_interval == "daily")
+                    lmspace::updateDaysCache(event_ptr, event_list_cache, event_details_cache, 1);
+                else if (atoi(rep_interval.c_str()) < 100 && atoi(rep_interval.c_str()) > 0)
+                    lmspace::updateDaysCache(event_ptr, event_list_cache, event_details_cache, atoi(rep_interval.c_str()));
                 else
                 {
-                    update_single_cache(event_ptr, event_list_cache, event_details_cache);
+                    std::cerr << "Repeatition interval not in correct format\n";
+                    std::cerr << "So taking repatition interval as 1\n";
+                    lmspace::updateDaysCache(event_ptr, event_list_cache, event_details_cache, 1);
                 }
             }
+            else
+            {
+                lmspace::updateSingleCache(event_ptr, event_list_cache, event_details_cache);
+            }
         }
-        event_list_cache.sort(event_priority);
+        event_list_cache.sort(eventPriority);
+    }
+
+}
+
+namespace argspace
+{
+
+    struct event
+    {
+        bool repeatition;
+        int authuser;
+        std::list<std::pair<std::string, std::string>> timings;
+        std::string browser;
+        std::string created;
+        std::string description;
+        std::string expiry_date;
+        std::string id;
+        std::string repeatition_interval;
+        std::string title;
+        std::string updated;
+        std::string url;
+    };
+    void parseAdd(const int &argc, char **argv);
+    void parseArgs(const int &argc, char **argv);
+    argspace::event eventDefault();
+    std::string genRandStr(std::size_t length);
+    std::string genRandStr(std::size_t length)
+    {
+        const std::string CHARACTERS = "0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz";
+
+        std::random_device random_device;
+        std::mt19937 generator(random_device());
+        std::uniform_int_distribution<> distribution(0, CHARACTERS.size() - 1);
+
+        std::string random_string;
+
+        for (std::size_t i = 0; i < length; ++i)
+        {
+            random_string += CHARACTERS[distribution(generator)];
+        }
+
+        return random_string;
+    }
+    argspace::event eventDefault()
+    {
+        nlohmann::json j;
+        std::ifstream input(CONFIG_FILE_PATH);
+        if (!input.is_open())
+        {
+            std::cerr << "launch-meet : cannot access \'" << EVENT_FILE_PATH << "\' : " << strerror(errno) << '\n';
+            exit(1);
+        }
+        input >> j;
+        input.close();
+        argspace::event ev = {j["repeatition"].get<bool>(),
+                              -1,
+                              {},
+                              j["browser"].get<std::string>(),
+                              getNow(),
+                              j["description"].get<std::string>(),
+                              getNow(31536000),
+                              genRandStr(15),
+                              j["repeatition_interval"].get<std::string>(),
+                              j["title"].get<std::string>(),
+                              getNow(),
+                              j["url"].get<std::string>()};
+        return ev;
+    }
+
+    void parseArgs(const int &argc, char **argv)
+    {
+        if (argc > 1)
+        {
+            std::string subcommand = argv[1];
+            argv[1] = "";
+            if (subcommand == "add")
+                argspace::parseAdd(argc, argv);
+            else if (subcommand == "clean")
+                lmspace::clean();
+            else if (subcommand == "edit")
+                std::cout << "edit";
+            else if (subcommand == "export")
+                std::cout << "export";
+            else if (subcommand == "help" || subcommand == "--help")
+            {
+                std::cout << "help";
+            }
+            else if (subcommand == "version" || subcommand == "--version" || subcommand == "-v")
+            {
+                std::cout << "version";
+            }
+        }
+    }
+
+    void parseAdd(const int &argc, char **argv)
+    {
+
+        static struct option long_options[] =
+            {
+                {"authuser", required_argument, 0, 'a'},
+                {"browser", required_argument, 0, 'b'},
+                {"description", required_argument, 0, 'd'},
+                {"expiry", required_argument, 0, 'e'},
+                {"repeat", required_argument, 0, 'r'},
+                {"timing", required_argument, 0, 't'},
+                {"title", required_argument, 0, 'T'},
+                {"url", required_argument, 0, 0},
+                {0, 0, 0, 0}};
+        int c;
+        int option_index = 0;
+
+        while (1)
+        {
+
+            /* getopt_long stores the option index here. */
+            c = getopt_long(argc, argv, "a:b:d:e:r:t:T:",
+                            long_options, &option_index);
+
+            /* Detect the end of the options. */
+            if (c == -1)
+                break;
+
+            switch (c)
+            {
+            case 0:
+            {
+                if (!(strcmp(long_options[option_index].name, "authuser")))
+                {
+                    break;
+                }
+                else if (!(strcmp(long_options[option_index].name, "browser")))
+                {
+                    break;
+                }
+                else if (!(strcmp(long_options[option_index].name, "description")))
+                {
+                    break;
+                }
+                else if (!(strcmp(long_options[option_index].name, "expiry")))
+                {
+                    break;
+                }
+                else if (!(strcmp(long_options[option_index].name, "repeat")))
+                {
+                    break;
+                }
+                else if (!(strcmp(long_options[option_index].name, "timing")))
+                {
+                    break;
+                }
+                else if (!(strcmp(long_options[option_index].name, "title")))
+                {
+                    break;
+                }
+                else if (!(strcmp(long_options[option_index].name, "url")))
+                {
+                    break;
+                }
+
+                break;
+            }
+            case 'a':
+            {
+            }
+            case 'b':
+                puts("option -b\n");
+                break;
+
+            case 'c':
+                printf("option -c with value `%s'\n", optarg);
+                break;
+
+            case 'd':
+                printf("option -d with value `%s'\n", optarg);
+                break;
+
+            case 'f':
+                printf("option -f with value `%s'\n", optarg);
+                break;
+
+            case '?':
+                /* getopt_long already printed an error message. */
+                break;
+
+            default:
+                abort();
+            }
+        }
     }
 }
 
-void inc_month(std::string &start_time)
+void incMonth(std::string &start_time)
 {
     struct tm start_tm;
     strptime(start_time.c_str(), "%Y-%m-%dT%H:%M:%S%z", &start_tm);
@@ -501,7 +794,7 @@ void inc_month(std::string &start_time)
     start_time = std::string(buffer, std::find(buffer, buffer + 25, '\0'));
 }
 
-std::string inc_month(const std::string &cur_time, const std::string &start_time)
+std::string incMonth(const std::string &cur_time, const std::string &start_time)
 {
     struct tm cur_tm, start_tm;
     strptime(cur_time.c_str(), "%Y-%m-%dT%H:%M:%S%z", &cur_tm);
@@ -525,7 +818,7 @@ std::string inc_month(const std::string &cur_time, const std::string &start_time
 }
 
 // Gets the current time as string, and can give offset to current time
-std::string get_now(const time_t offset)
+std::string getNow(const time_t offset)
 {
     // getting raw time and converting to local time
     time_t epoch;
@@ -543,7 +836,7 @@ std::string get_now(const time_t offset)
 }
 
 // Function converts epoch to string in iso-8601 seconds format and returns time string
-std::string epoch_to_string(const time_t &epoch)
+std::string epochToString(const time_t &epoch)
 {
     //converting to local time
     tm *tm_now = localtime(&epoch);
@@ -559,7 +852,7 @@ std::string epoch_to_string(const time_t &epoch)
 }
 
 // Function converts string time(in iso-8601 seconds format) to epoch and returns epoch
-time_t string_to_epoch(const std::string &time_str)
+time_t stringToEpoch(const std::string &time_str)
 {
     struct tm tm_then;
     time_t now = 0;
@@ -577,36 +870,37 @@ time_t string_to_epoch(const std::string &time_str)
 
 int main(int argc, char **argv)
 {
-
-    std::list<lmspace::event> event_list_cache;
+    lmspace::init();
+    argspace::parseArgs(argc, argv);
+    std::list<lmspace::timings> event_list_cache;
     std::map<std::string, lmspace::details> event_details_cache;
 
     // loading cache file if exists
-    lmspace::load_cache(event_list_cache, event_details_cache);
+    lmspace::loadCache(event_list_cache, event_details_cache);
 
     // If list is empty, then updates cache and writes to file
     if (event_list_cache.empty())
     {
-        lmspace::update_cache(event_list_cache, event_details_cache);
+        lmspace::updateCache(event_list_cache, event_details_cache);
         if (!event_list_cache.empty())
-            lmspace::write_cache(event_list_cache, event_details_cache);
+            lmspace::writeCache(event_list_cache, event_details_cache);
     }
 
     // Iterating events
     for (auto event = event_list_cache.begin(); event != event_list_cache.end(); ++event)
     {
-        if ((*event).end < get_now())
+        if ((*event).end < getNow())
         {
             event_list_cache.erase(event);
             continue;
         }
-        lmspace::event current_event = (*event);
+        lmspace::timings current_event = (*event);
         lmspace::details current_event_details, tmp;
         auto itr = event_details_cache.find(current_event.id);
         if (itr != event_details_cache.end())
         {
             current_event_details = itr->second;
-            lmspace::launch_event(current_event, current_event_details);
+            lmspace::launchEvent(current_event, current_event_details);
         }
     }
 }
