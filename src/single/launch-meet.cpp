@@ -5,7 +5,7 @@
 #include <csignal>
 #include <unistd.h> // execl(), fork()
 #include <stdlib.h>
-#include <sys/wait.h>  // waitpid()
+#include <sys/wait.h> // waitpid()
 #include <time.h>
 #include <getopt.h>
 #include "../include/json.hpp"
@@ -85,7 +85,14 @@ namespace lmspace
     void updateYearlyCache(nlohmann::detail::iter_impl<nlohmann::json> &event_ptr, std::list<lmspace::timings> &event_list_cache, std::map<std::string, lmspace::details> &event_details_cache);
     void writeCache(const std::list<lmspace::timings> &event_list_cache, const std::map<std::string, lmspace::details> &event_details_cache);
     bool isexpired(const lmspace::timings &timing);
+    bool is_empty(std::ifstream &pFile);
     // Functions
+
+    // checks if file empty
+    bool is_empty(std::ifstream &pFile)
+    {
+        return pFile.peek() == std::ifstream::traits_type::eof();
+    }
 
     bool isexpired(const lmspace::timings &timing)
     {
@@ -101,21 +108,21 @@ namespace lmspace
         if (!pid)
             execl("/usr/bin/mkdir", "/usr/bin/mkdir", "-m=700", "-p", EVENT_PATH, (char *)0);
 
-        waitpid(-1,&status,0);
+        waitpid(-1, &status, 0);
         pid = fork();
         if (!pid)
             execl("/usr/bin/mkdir", "mkdir", "-m=700", "-p", CACHE_PATH, (char *)0);
 
-        waitpid(-1,&status,0);
+        waitpid(-1, &status, 0);
         pid = fork();
         if (!pid)
             execl("/usr/bin/mkdir", "mkdir", "-m=700", "-p", CONFIG_PATH, (char *)0);
-        waitpid(-1,&status,0);
+        waitpid(-1, &status, 0);
 #endif
 
         // Initializing the required files
         std::ifstream input(EVENT_FILE_PATH);
-        if (!input.is_open())
+        if (!input.is_open() || is_empty(input))
         {
             input.close();
             std::ofstream output(EVENT_FILE_PATH);
@@ -123,6 +130,7 @@ namespace lmspace
             output.close();
         }
         input.close();
+
         input.open(CONFIG_FILE_PATH);
         if (!input.is_open())
         {
@@ -162,6 +170,7 @@ namespace lmspace
         }
         input >> j;
         input.close();
+
         std::string current_time = getNow();
         for (nlohmann::json::iterator event_ptr = j.begin(); event_ptr != j.end(); ++event_ptr)
         {
@@ -170,7 +179,8 @@ namespace lmspace
                 j.erase(event_ptr);
         }
         std::ofstream output(EVENT_FILE_PATH);
-        output << j;
+        output << j.dump();
+        output.close();
 
         // Success message
         std::cout << "Successfully cleaned expired events!\n";
@@ -193,6 +203,8 @@ namespace lmspace
                 lmspace::json2list(ev_json, event_list_cache);
                 lmspace::json2map(dt_json, event_details_cache);
             }
+            else
+                evlist_in.close();
         }
     }
 
@@ -265,10 +277,12 @@ namespace lmspace
         // Writing to cache.json
         std::ofstream evlist_out(EVENT_CACHE_PATH);
         evlist_out << cache_json.dump(4);
+        evlist_out.close();
 
         // Writing details cache to file
         std::ofstream dvlist(EVENT_DETAILS_CACHE_PATH);
-        dvlist << dt_json.dump(4).c_str();
+        dvlist << dt_json.dump(4);
+        dvlist.close();
     }
 
     void json2details(const nlohmann::detail::iter_impl<nlohmann::json> &itr, struct details &event_detail)
@@ -565,10 +579,13 @@ namespace lmspace
         std::ifstream input(EVENT_FILE_PATH);
         if (!input.is_open())
         {
+            input.close();
             std::cerr << "launch-meet : cannot access \'" << EVENT_FILE_PATH << "\' : " << strerror(errno) << '\n';
             exit(1);
         }
         input >> j;
+        input.close();
+
         std::string current_time = getNow();
 
         for (nlohmann::json::iterator event_ptr = j.begin(); event_ptr != j.end(); ++event_ptr)
@@ -766,6 +783,7 @@ Report bugs at https://github.com/ms-jagadeeshan/launch-meet/issues
         }
         input >> j;
         input.close();
+
         argspace::event ev = {j["interactive"].get<bool>(),
                               j["default"]["repeatition"].get<bool>(),
                               j["default"]["authuser"].get<int>(),
@@ -1038,6 +1056,7 @@ Report bugs at https://github.com/ms-jagadeeshan/launch-meet/issues
         std::ifstream input(EVENT_FILE_PATH);
         if (!input.is_open())
         {
+            input.close();
             std::cerr << "launch-meet : cannot access \'" << EVENT_FILE_PATH << "\' : " << strerror(errno) << '\n';
             exit(1);
         }
@@ -1056,7 +1075,8 @@ Report bugs at https://github.com/ms-jagadeeshan/launch-meet/issues
                      {"repeatition_interval", ev.repeatition_interval},
                      {"expiry_date", ev.expiry_date}});
         std::ofstream event_out(EVENT_FILE_PATH);
-        event_out << j;
+        event_out << j.dump();
+        event_out.close();
 
         // Success message
         std::cout << "Successfully added the new event!\n";
