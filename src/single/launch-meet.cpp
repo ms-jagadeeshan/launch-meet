@@ -2,13 +2,16 @@
 #include <fstream>
 #include <list>
 #include <random>
+#include <csignal>
 #include <unistd.h> // execl(), fork()
 #include <stdlib.h>
+#include <sys/wait.h>  // waitpid()
 #include <time.h>
 #include <getopt.h>
-#include <sys/stat.h> // mkdir
-#include "json.hpp"
+#include "../include/json.hpp"
 
+//start--------config.h---------//
+// Paths of cache,config,events
 #ifdef __linux__
 
 #define HOME std::string(std::getenv("HOME")).c_str()
@@ -32,9 +35,11 @@
 #else
 
 #endif
-// Paths of cache,config,events
 
+#define TIME_FORMAT "%Y-%m-%dT%H:%M:%S%z"
 #define DAY_SEC 86400 // No. of seconds in a day
+//end--------config.h---------//
+
 // function prototype
 time_t stringToEpoch(const std::string &time_str);
 std::string incMonth(const std::string &cur_time, const std::string &start_time);
@@ -79,24 +84,33 @@ namespace lmspace
     void updateMonthlyCache(nlohmann::detail::iter_impl<nlohmann::json> &event_ptr, std::list<lmspace::timings> &event_list_cache, std::map<std::string, lmspace::details> &event_details_cache);
     void updateYearlyCache(nlohmann::detail::iter_impl<nlohmann::json> &event_ptr, std::list<lmspace::timings> &event_list_cache, std::map<std::string, lmspace::details> &event_details_cache);
     void writeCache(const std::list<lmspace::timings> &event_list_cache, const std::map<std::string, lmspace::details> &event_details_cache);
-
+    bool isexpired(const lmspace::timings &timing);
     // Functions
+
+    bool isexpired(const lmspace::timings &timing)
+    {
+        return timing.end < getNow();
+    }
 
     void init()
     {
 #ifdef __linux__
         // Creating all the required directories
         pid_t pid = fork();
+        int status;
         if (!pid)
             execl("/usr/bin/mkdir", "/usr/bin/mkdir", "-m=700", "-p", EVENT_PATH, (char *)0);
 
+        waitpid(-1,&status,0);
         pid = fork();
         if (!pid)
             execl("/usr/bin/mkdir", "mkdir", "-m=700", "-p", CACHE_PATH, (char *)0);
 
+        waitpid(-1,&status,0);
         pid = fork();
         if (!pid)
             execl("/usr/bin/mkdir", "mkdir", "-m=700", "-p", CONFIG_PATH, (char *)0);
+        waitpid(-1,&status,0);
 #endif
 
         // Initializing the required files
@@ -122,11 +136,12 @@ namespace lmspace
         "authuser": 0,
         "browser": "default",
         "description": "No description provided",
-        "expiry_date": "",
+        "expiry_date_offset":31536000,
         "repeatition_interval": "1",
         "title": "Sample Title",
         "url": "https://example.com"
-    }
+    },
+    "interactive":false
 }
 )"_json;
             output << conf_json.dump(4);
@@ -155,7 +170,11 @@ namespace lmspace
                 j.erase(event_ptr);
         }
         std::ofstream output(EVENT_FILE_PATH);
-        output << j.dump(4);
+        output << j;
+
+        // Success message
+        std::cout << "Successfully cleaned expired events!\n";
+        exit(0);
     }
 
     void loadCache(std::list<lmspace::timings> &event_list_cache, std::map<std::string, lmspace::details> &event_details_cache)
@@ -190,7 +209,7 @@ namespace lmspace
             std::cout << "Description: " << d.description << '\n';
             std::cout << "Start time : " << asctime(localtime(&start_epoch));
             std::cout << "End  time  : " << asctime(localtime(&end_epoch));
-            std::cout << "Waiting " << (start_epoch - cur_epoch) / 60 << " minutes...";
+            std::cout << "Waiting " << (start_epoch - cur_epoch) / 60 << " minutes..." << std::endl;
             sleep(start_epoch - cur_epoch);
             std::cout << "Opening \"" << d.url << "\"\n\n";
         }
@@ -597,6 +616,7 @@ namespace argspace
 
     struct event
     {
+        bool is_interactive;
         bool repeatition;
         int authuser;
         std::list<std::pair<std::string, std::string>> timings;
@@ -610,10 +630,114 @@ namespace argspace
         std::string updated;
         std::string url;
     };
-    void parseAdd(const int &argc, char **argv);
-    void parseArgs(const int &argc, char **argv);
     argspace::event eventDefault();
     std::string genRandStr(std::size_t length);
+    void addTiming(const char *optarg, argspace::event &ev);
+    void parseAdd(const int &argc, char **argv);
+    void parseArgs(const int &argc, char **argv);
+    void parseHelp(const int &argc, char **argv);
+    void help(std::string _help);
+
+    void help(std::string _help = "global")
+    {
+        if (_help == "global")
+        {
+            std::cout << R"V0G0N(usage: launch-meet <command> [commmand_options]
+
+Options:
+   -v, --version  Output version information and exit
+   -b             Detaches the terminal and becomes background process
+Note: To kill the background process, use 'kill `ps h -C launch-meet -o pid`'
+
+Sub commands:
+   add            Adds new event
+   clean          Deletes the expired event
+   edit           Edit the existing event details
+   export         Export the event list
+   extend         Extent the expired events
+   remove         Removes the event
+   search         Searches the event
+   sync           Sync from google calendar, or import from calendar file
+   help           Shows this help message
+
+See 'launch-meet help <command>' to read about a specific subcommand.
+Report bugs at https://github.com/ms-jagadeeshan/launch-meet/issues
+)V0G0N";
+        }
+        else if (_help == "add")
+        {
+            std::cout << R"V0G0N(usage: launch-meet add [options]
+Adds new event to the database.
+
+Options:
+  -a, --authuser INTEGER            Authuser value for gmeet(Default:0)
+  -b, --browser BROWSER_NAME        Browser to open the event(Default:system default)
+  -d, --description STRING          Description of the event
+  -e, --expiry EXP_TIME             Expiry time of the event(Format: 2022-03-24T14:00)
+  -i, --interactive                 Interactively takes the input
+  -r, --repeat INTERVAL             Repeatition interval of the event(eg. daily,3,yearly,4,etc..)
+  -t, --timings EVENT_TIME          Timings of the event (Format: 2022-10-24T11:30+100M)
+  -T, --title TITLE                 Title of the event
+  --url URL                         Url of the event to be opened
+Note: Option '-t' can be used multiple times
+
+Example:
+$ launch-meet add -i
+$ launch-meet add --url "https://meet.jit.si/" \
+                  -t '2022-03-24T11:30+100M' \
+                  -t '2022-04-24T11:30+60M'
+$ launch-meet add -T 'Title' \
+                  --url 'https://meet.jit.si/' \
+                  -e '2022-10-24T14:00' \
+                  -t '2022-03-24T11:30+1H' \
+                  -T 'My Title'
+
+When you don't give required details(url and timings), program will ask them interactively.
+Report bugs at https://github.com/ms-jagadeeshan/launch-meet/issues
+)V0G0N";
+        }
+
+        exit(0);
+    }
+    void parseHelp(const int &argc, char **argv)
+    {
+        if (argc == 2)
+        {
+            argspace::help();
+        }
+        std::string _help = std::string(argv[2], std::find(argv[2], argv[2] + 10, '\0'));
+        argspace::help(_help);
+    }
+
+    void addTiming(const char *optarg, argspace::event &ev)
+    {
+        std::string time_arg = std::string(optarg, std::find(optarg, optarg + 25, '\0'));
+        int length = time_arg.length();
+        if (length < 19)
+        {
+            std::cerr << "Invalid time format... Give timings in below format\n-t \"2022-10-24T11:30+100M\"\n";
+            exit(1);
+        }
+        time_t start_time = 0;
+        start_time = stringToEpoch(time_arg.substr(0, 16).append(":00+0530"));
+
+        int meet_interval = atoi(time_arg.substr(17, length - 18).c_str());
+        if (time_arg[length - 1] == 'H' || time_arg[length - 1] == 'h')
+        {
+            meet_interval *= 3600;
+        }
+        else if (time_arg[length - 1] == 'M' || time_arg[length - 1] == 'm')
+        {
+            meet_interval *= 60;
+        }
+        else
+        {
+            std::cerr << "Invalid time format... Give timings in below format\n-t \"2022-10-24T11:30+100M\"\n";
+            exit(1);
+        }
+
+        ev.timings.push_back({epochToString(start_time), epochToString(start_time + meet_interval)});
+    }
     std::string genRandStr(std::size_t length)
     {
         const std::string CHARACTERS = "0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz";
@@ -642,18 +766,19 @@ namespace argspace
         }
         input >> j;
         input.close();
-        argspace::event ev = {j["repeatition"].get<bool>(),
-                              -1,
+        argspace::event ev = {j["interactive"].get<bool>(),
+                              j["default"]["repeatition"].get<bool>(),
+                              j["default"]["authuser"].get<int>(),
                               {},
-                              j["browser"].get<std::string>(),
+                              j["default"]["browser"].get<std::string>(),
                               getNow(),
-                              j["description"].get<std::string>(),
-                              getNow(31536000),
+                              j["default"]["description"].get<std::string>(),
+                              getNow(j["default"]["expiry_date_offset"].get<int>()),
                               genRandStr(15),
-                              j["repeatition_interval"].get<std::string>(),
-                              j["title"].get<std::string>(),
+                              j["default"]["repeatition_interval"].get<std::string>(),
+                              j["default"]["title"].get<std::string>(),
                               getNow(),
-                              j["url"].get<std::string>()};
+                              j["default"]["url"].get<std::string>()};
         return ev;
     }
 
@@ -668,29 +793,38 @@ namespace argspace
             else if (subcommand == "clean")
                 lmspace::clean();
             else if (subcommand == "edit")
-                std::cout << "edit";
-            else if (subcommand == "export")
-                std::cout << "export";
-            else if (subcommand == "help" || subcommand == "--help")
             {
-                std::cout << "help";
+                std::cout << "Coming soon\n";
+                exit(0);
             }
+            else if (subcommand == "export")
+            {
+                std::cout << "Comming soon\n";
+                exit(0);
+            }
+            else if (subcommand == "help" || subcommand == "--help")
+                argspace::parseHelp(argc, argv);
             else if (subcommand == "version" || subcommand == "--version" || subcommand == "-v")
             {
-                std::cout << "version";
+                std::cout << "launch-meet 0.5\n";
+                exit(0);
+            }
+            else if (subcommand == "-b")
+            {
+                daemon(0, 0);
             }
         }
     }
 
     void parseAdd(const int &argc, char **argv)
     {
-
         static struct option long_options[] =
             {
                 {"authuser", required_argument, 0, 'a'},
                 {"browser", required_argument, 0, 'b'},
                 {"description", required_argument, 0, 'd'},
                 {"expiry", required_argument, 0, 'e'},
+                {"interactive", no_argument, 0, 'i'},
                 {"repeat", required_argument, 0, 'r'},
                 {"timing", required_argument, 0, 't'},
                 {"title", required_argument, 0, 'T'},
@@ -698,12 +832,12 @@ namespace argspace
                 {0, 0, 0, 0}};
         int c;
         int option_index = 0;
-
+        argspace::event ev = eventDefault();
         while (1)
         {
 
             /* getopt_long stores the option index here. */
-            c = getopt_long(argc, argv, "a:b:d:e:r:t:T:",
+            c = getopt_long(argc, argv, "a:b:d:e:r:t:T:i",
                             long_options, &option_index);
 
             /* Detect the end of the options. */
@@ -715,59 +849,71 @@ namespace argspace
             case 0:
             {
                 if (!(strcmp(long_options[option_index].name, "authuser")))
-                {
-                    break;
-                }
+                    ev.authuser = atoi(optarg);
                 else if (!(strcmp(long_options[option_index].name, "browser")))
-                {
-                    break;
-                }
+                    ev.browser = optarg;
                 else if (!(strcmp(long_options[option_index].name, "description")))
-                {
-                    break;
-                }
+                    ev.description = optarg;
                 else if (!(strcmp(long_options[option_index].name, "expiry")))
-                {
-                    break;
-                }
+                    ev.expiry_date = optarg;
+                else if (!(strcmp(long_options[option_index].name, "interactive")))
+                    ev.is_interactive = true;
                 else if (!(strcmp(long_options[option_index].name, "repeat")))
                 {
-                    break;
+                    ev.repeatition = true;
+                    ev.repeatition_interval = optarg;
                 }
                 else if (!(strcmp(long_options[option_index].name, "timing")))
-                {
-                    break;
-                }
+                    addTiming(optarg, ev);
                 else if (!(strcmp(long_options[option_index].name, "title")))
-                {
-                    break;
-                }
+                    ev.title = optarg;
                 else if (!(strcmp(long_options[option_index].name, "url")))
-                {
-                    break;
-                }
-
+                    ev.url = optarg;
+                else if (!(strcmp(long_options[option_index].name, "interactive")))
+                    ev.is_interactive = true;
                 break;
             }
             case 'a':
             {
+                ev.authuser = atoi(optarg);
+                break;
             }
             case 'b':
-                puts("option -b\n");
+            {
+                ev.browser = optarg;
                 break;
-
-            case 'c':
-                printf("option -c with value `%s'\n", optarg);
-                break;
-
+            }
             case 'd':
-                printf("option -d with value `%s'\n", optarg);
+            {
+                ev.description = optarg;
                 break;
-
-            case 'f':
-                printf("option -f with value `%s'\n", optarg);
+            }
+            case 'e':
+            {
+                ev.expiry_date = optarg;
                 break;
-
+            }
+            case 'r':
+            {
+                ev.repeatition = true;
+                ev.repeatition_interval = optarg;
+                break;
+            }
+            case 't':
+            {
+                addTiming(optarg, ev);
+                break;
+            }
+            case 'T':
+            {
+                ev.title = optarg;
+                break;
+            }
+            case 'i':
+            {
+                ev.is_interactive = true;
+                break;
+            }
             case '?':
                 /* getopt_long already printed an error message. */
                 break;
@@ -776,19 +922,158 @@ namespace argspace
                 abort();
             }
         }
+        argspace::event evd = eventDefault();
+        if (ev.is_interactive)
+        {
+            // Comparing with default, to check whether arguments passed or not
+            if (ev.title == evd.title)
+            {
+                std::cout << "Enter the Event Title: ";
+                std::cin >> ev.title;
+            }
+            if (ev.browser == evd.browser)
+            {
+                int op;
+                do
+                {
+                    std::cout << "Browser Choice\n1.Firefox\n2.Waterfox\n3.Default Browser\n";
+                    std::cout << "Choose one of the browser(1-3):";
+                    std::cin >> op;
+                } while (op < 0 && op > 3);
+                if (op == 1)
+                    ev.browser = "firefox";
+                else if (op == 2)
+                    ev.browser = "waterfox";
+            }
+            if (ev.url == evd.url)
+            {
+                std::cout << "Enter the meet url: ";
+                std::cin >> ev.url;
+            }
+            if (ev.authuser == evd.authuser)
+            {
+                bool isGoogleMeet = ev.url.find("meet.google.com/") != std::string::npos;
+                if (isGoogleMeet)
+                {
+                    std::cout << "Enter the google meet authuser value: ";
+                    std::cin >> ev.authuser;
+                }
+            }
+            if (ev.description == evd.description)
+            {
+                std::cout << "Enter the Event description: ";
+                std::cin >> ev.description;
+            }
+            if (ev.expiry_date == evd.expiry_date)
+            {
+                int length;
+                std::string exp_date;
+                do
+                {
+                    std::cout << "Enter expiry date(format eg. 2022-03-24T14:00): ";
+                    std::cin >> exp_date;
+                    length = exp_date.length();
+                } while (length != 16);
+                time_t exp_epoch;
+                if (exp_epoch = stringToEpoch(exp_date.append(":00+0530")))
+                {
+                    ev.expiry_date = exp_date.append(":00+0530");
+                }
+                else
+                {
+                    std::cerr << "Invalid time format... Give timings in below format\n-t \"2022-10-24T11:30+100M\"\n";
+                    exit(1);
+                }
+            }
+            if (ev.repeatition_interval == evd.repeatition_interval)
+            {
+                std::cout << "Enter the repeatition interval(daily,weekly,yearly,5,3...): ";
+                std::cin >> ev.repeatition_interval;
+                ev.repeatition = true;
+            }
+            if (ev.timings.empty())
+            {
+                int num;
+                std::string timings;
+                do
+                {
+                    std::cout << "No. of timings of this event: ";
+                    std::cin >> num;
+                } while (num < 0);
+                std::cout << "Give timings in below format\neg. -t \"2022-10-24T11:30+100M\"       - which means event starts at 2022-10-24 11:30AM and continues for 100 minutes\n";
+                for (int i = 0; i < num; i++)
+                {
+                    std::cin >> timings;
+                    addTiming(timings.c_str(), ev);
+                }
+            }
+        }
+
+        if (ev.url == evd.url)
+        {
+            std::cout << "Enter the meet url: ";
+            std::cin >> ev.url;
+        }
+
+        if (ev.timings.empty())
+        {
+            int num;
+            std::string timings;
+            do
+            {
+                std::cout << "No. of timings of this event: ";
+                std::cin >> num;
+            } while (num < 0);
+            std::cout << "\nGive timings in below format\n\tEg. -t \"2022-10-24T11:30+100M\"\t-\twhich means event starts at 2022-10-24 11:30AM and continues for 100 minutes\n";
+            for (int i = 0; i < num; i++)
+            {
+                std::cout << "Enter the timings: ";
+                std::cin >> timings;
+                addTiming(timings.c_str(), ev);
+            }
+        }
+
+        // Writing the changes to file
+        nlohmann::json j;
+        std::ifstream input(EVENT_FILE_PATH);
+        if (!input.is_open())
+        {
+            std::cerr << "launch-meet : cannot access \'" << EVENT_FILE_PATH << "\' : " << strerror(errno) << '\n';
+            exit(1);
+        }
+        input >> j;
+        input.close();
+        j.push_back({{"id", ev.id},
+                     {"created", ev.created},
+                     {"updated", ev.updated},
+                     {"title", ev.title},
+                     {"url", ev.url},
+                     {"authuser", ev.authuser},
+                     {"browser", ev.browser},
+                     {"description", ev.description},
+                     {"timings", ev.timings},
+                     {"repeatition", ev.repeatition},
+                     {"repeatition_interval", ev.repeatition_interval},
+                     {"expiry_date", ev.expiry_date}});
+        std::ofstream event_out(EVENT_FILE_PATH);
+        event_out << j;
+
+        // Success message
+        std::cout << "Successfully added the new event!\n";
+        exit(0);
     }
 }
 
 void incMonth(std::string &start_time)
 {
     struct tm start_tm;
-    strptime(start_time.c_str(), "%Y-%m-%dT%H:%M:%S%z", &start_tm);
+    strptime(start_time.c_str(), TIME_FORMAT, &start_tm);
     start_tm.tm_zone = "IST";
     start_tm.tm_isdst = 0;
     start_tm.tm_mon += 1;
     // Buffer to hold iso-8601 seconds format eg.  2022-01-22T11:39:13+0530
     char buffer[25];
-    strftime(buffer, 25, "%Y-%m-%dT%H:%M:%S%z", &start_tm);
+    strftime(buffer, 25, TIME_FORMAT, &start_tm);
     buffer[24] = '\0';
 
     start_time = std::string(buffer, std::find(buffer, buffer + 25, '\0'));
@@ -797,8 +1082,8 @@ void incMonth(std::string &start_time)
 std::string incMonth(const std::string &cur_time, const std::string &start_time)
 {
     struct tm cur_tm, start_tm;
-    strptime(cur_time.c_str(), "%Y-%m-%dT%H:%M:%S%z", &cur_tm);
-    strptime(start_time.c_str(), "%Y-%m-%dT%H:%M:%S%z", &start_tm);
+    strptime(cur_time.c_str(), TIME_FORMAT, &cur_tm);
+    strptime(start_time.c_str(), TIME_FORMAT, &start_tm);
     start_tm.tm_year = cur_tm.tm_year;
     start_tm.tm_mon = cur_tm.tm_mon;
     start_tm.tm_zone = cur_tm.tm_zone = "IST";
@@ -810,7 +1095,7 @@ std::string incMonth(const std::string &cur_time, const std::string &start_time)
     }
     // Buffer to hold iso-8601 seconds format eg.  2022-01-22T11:39:13+0530
     char buffer[25];
-    strftime(buffer, 25, "%Y-%m-%dT%H:%M:%S%z", &start_tm);
+    strftime(buffer, 25, TIME_FORMAT, &start_tm);
     buffer[24] = '\0';
 
     // coverting char* to std::string
@@ -828,7 +1113,7 @@ std::string getNow(const time_t offset)
 
     // Buffer to hold iso-8601 seconds format eg.  2022-01-22T11:39:13+0530
     char buffer[25];
-    strftime(buffer, 25, "%Y-%m-%dT%H:%M:%S%z", tm_now);
+    strftime(buffer, 25, TIME_FORMAT, tm_now);
     buffer[24] = '\0';
 
     // coverting char* to std::string
@@ -844,19 +1129,25 @@ std::string epochToString(const time_t &epoch)
     // Buffer to hold iso-8601 seconds format
     //eg.  2022-01-22T11:39:13+0530
     char buffer[25];
-    strftime(buffer, 25, "%Y-%m-%dT%H:%M:%S%z", tm_now);
+    strftime(buffer, 25, TIME_FORMAT, tm_now);
     buffer[24] = '\0';
 
     // coverting char* to std::string
     return std::string(buffer, std::find(buffer, buffer + 25, '\0'));
 }
+void signalHandler(int signal_num)
+{
+    std::cout << "Bye\n";
 
+    // It terminates the  program
+    exit(signal_num);
+}
 // Function converts string time(in iso-8601 seconds format) to epoch and returns epoch
 time_t stringToEpoch(const std::string &time_str)
 {
     struct tm tm_then;
     time_t now = 0;
-    strptime(time_str.c_str(), "%Y-%m-%dT%H:%M:%S%z", &tm_then);
+    strptime(time_str.c_str(), TIME_FORMAT, &tm_then);
     tm_then.tm_zone = "IST";
     tm_then.tm_isdst = 0;
     now = mktime(&tm_then);
@@ -870,6 +1161,7 @@ time_t stringToEpoch(const std::string &time_str)
 
 int main(int argc, char **argv)
 {
+    signal(SIGINT, signalHandler);
     lmspace::init();
     argspace::parseArgs(argc, argv);
     std::list<lmspace::timings> event_list_cache;
@@ -886,14 +1178,14 @@ int main(int argc, char **argv)
             lmspace::writeCache(event_list_cache, event_details_cache);
     }
 
+    // Cleaning expired event cache and writing the remaining events
+    event_list_cache.remove_if(lmspace::isexpired);
+    if (!event_list_cache.empty())
+        lmspace::writeCache(event_list_cache, event_details_cache);
+
     // Iterating events
     for (auto event = event_list_cache.begin(); event != event_list_cache.end(); ++event)
     {
-        if ((*event).end < getNow())
-        {
-            event_list_cache.erase(event);
-            continue;
-        }
         lmspace::timings current_event = (*event);
         lmspace::details current_event_details, tmp;
         auto itr = event_details_cache.find(current_event.id);

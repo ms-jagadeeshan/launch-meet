@@ -50,3 +50,4 @@ sqlite-amalgamation-3370200.zip
 .vscode/launch.json
 .vscode/settings.json
 .vscode/tasks.json
+src/fun.cpp
