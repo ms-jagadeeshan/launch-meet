@@ -149,7 +149,8 @@ namespace lmspace
         "title": "Sample Title",
         "url": "https://example.com"
     },
-    "interactive":false
+    "interactive":false,
+    "join_before":300
 }
 )"_json;
             output << conf_json.dump(4);
@@ -370,6 +371,7 @@ namespace lmspace
                                                        (*event_ptr)["title"],
                                                        lmspace::urlUpdate(event_ptr)};
                         }
+                        break;
                     }
                     else
                     {
@@ -435,11 +437,8 @@ namespace lmspace
                                                        lmspace::urlUpdate(event_ptr)};
                         }
                     }
-                    else
-                    {
-                        start_time = incMonth(cur_time, start_time);
-                        end_time = epochToString(stringToEpoch(start_time) + meet_duration);
-                    }
+                    start_time = incMonth(cur_time, start_time);
+                    end_time = epochToString(stringToEpoch(start_time) + meet_duration);
                 }
                 else
                 {
@@ -490,6 +489,7 @@ namespace lmspace
                 {
                     if (end_time > cur_time)
                     {
+                        time_t start_epoch = 0;
                         event_list_cache.push_back({end_time, id, start_time});
                         if (event_details_cache.find(id) == event_details_cache.end())
                             event_details_cache[id] = {(*event_ptr)["authuser"],
@@ -497,19 +497,19 @@ namespace lmspace
                                                        (*event_ptr)["description"],
                                                        (*event_ptr)["title"],
                                                        lmspace::urlUpdate(event_ptr)};
-                    }
-                    else
-                    {
-                        time_t start_epoch = 0, cur_epoch = 0;
                         start_epoch = stringToEpoch(start_time);
-                        cur_epoch = stringToEpoch(cur_time);
-                        int offset = (int)((cur_epoch - start_epoch) / epoch_offset);
-                        start_epoch += (offset * epoch_offset);
-                        if ((start_epoch + meet_duration) < cur_epoch)
-                            start_epoch += epoch_offset;
-                        start_time = epochToString(start_epoch);
-                        end_time = epochToString(start_epoch + meet_duration);
+                        start_time = epochToString(start_epoch + epoch_offset);
+                        end_time = epochToString(start_epoch + epoch_offset + meet_duration);
                     }
+                    time_t start_epoch = 0, cur_epoch = 0;
+                    start_epoch = stringToEpoch(start_time);
+                    cur_epoch = stringToEpoch(cur_time);
+                    int offset = (int)((cur_epoch - start_epoch) / epoch_offset);
+                    start_epoch += (offset * epoch_offset);
+                    if ((start_epoch + meet_duration) < cur_epoch)
+                        start_epoch += epoch_offset;
+                    start_time = epochToString(start_epoch);
+                    end_time = epochToString(start_epoch + meet_duration);
                 }
                 else
                 {
@@ -636,7 +636,7 @@ namespace argspace
         bool is_interactive;
         bool repeatition;
         int authuser;
-        std::list<std::pair<std::string, std::string>> timings;
+        std::list<std::map<std::string, std::string>> timings;
         std::string browser;
         std::string created;
         std::string description;
@@ -752,8 +752,10 @@ Report bugs at https://github.com/ms-jagadeeshan/launch-meet/issues
             std::cerr << "Invalid time format... Give timings in below format\n-t \"2022-10-24T11:30+100M\"\n";
             exit(1);
         }
-
-        ev.timings.push_back({epochToString(start_time), epochToString(start_time + meet_interval)});
+        std::map<std::string, std::string> mp;
+        mp.insert({"start", epochToString(start_time)});
+        mp.insert({"end", epochToString(start_time + meet_interval)});
+        ev.timings.push_back(mp);
     }
     std::string genRandStr(std::size_t length)
     {
@@ -831,8 +833,9 @@ Report bugs at https://github.com/ms-jagadeeshan/launch-meet/issues
             {
                 daemon(0, 0);
             }
-            else{
-                std::cerr<<"launch-meet: '"<<subcommand<<"' is not a launch-meet command. See 'launch-meet --help'\n";
+            else
+            {
+                std::cerr << "launch-meet: '" << subcommand << "' is not a launch-meet command. See 'launch-meet --help'\n";
             }
         }
     }
@@ -1021,9 +1024,10 @@ Report bugs at https://github.com/ms-jagadeeshan/launch-meet/issues
                     std::cout << "No. of timings of this event: ";
                     std::cin >> num;
                 } while (num < 0);
-                std::cout << "Give timings in below format\neg. -t \"2022-10-24T11:30+100M\"       - which means event starts at 2022-10-24 11:30AM and continues for 100 minutes\n";
+                std::cout << "\nGive timings in below format\n\tEg. -t \"2022-10-24T11:30+100M\"\t-\twhich means event starts at 2022-10-24 11:30AM and continues for 100 minutes\n";
                 for (int i = 0; i < num; i++)
                 {
+                    std::cout << "Enter the timings " << i + 1 << ": ";
                     std::cin >> timings;
                     addTiming(timings.c_str(), ev);
                 }
@@ -1048,7 +1052,7 @@ Report bugs at https://github.com/ms-jagadeeshan/launch-meet/issues
             std::cout << "\nGive timings in below format\n\tEg. -t \"2022-10-24T11:30+100M\"\t-\twhich means event starts at 2022-10-24 11:30AM and continues for 100 minutes\n";
             for (int i = 0; i < num; i++)
             {
-                std::cout << "Enter the timings: ";
+                std::cout << "Enter the timings " << i + 1 << ": ";
                 std::cin >> timings;
                 addTiming(timings.c_str(), ev);
             }
@@ -1080,6 +1084,14 @@ Report bugs at https://github.com/ms-jagadeeshan/launch-meet/issues
         std::ofstream event_out(EVENT_FILE_PATH);
         event_out << j.dump();
         event_out.close();
+
+        std::list<lmspace::timings> event_list_cache;
+        std::map<std::string, lmspace::details> event_details_cache;
+
+        //  updates cache and writes to file
+        lmspace::updateCache(event_list_cache, event_details_cache);
+        if (!event_list_cache.empty())
+            lmspace::writeCache(event_list_cache, event_details_cache);
 
         // Success message
         std::cout << "Successfully added the new event!\n";
