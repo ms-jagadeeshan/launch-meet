@@ -51,3 +51,6 @@ sqlite-amalgamation-3370200.zip
 .vscode/settings.json
 .vscode/tasks.json
 src/fun.cpp
+bin/launch-meet
+src/single/launch-meet
+src/tmp

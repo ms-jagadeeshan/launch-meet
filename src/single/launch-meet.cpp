@@ -831,6 +831,9 @@ Report bugs at https://github.com/ms-jagadeeshan/launch-meet/issues
             {
                 daemon(0, 0);
             }
+            else{
+                std::cerr<<"launch-meet: '"<<subcommand<<"' is not a launch-meet command. See 'launch-meet --help'\n";
+            }
         }
     }
 
@@ -947,7 +950,7 @@ Report bugs at https://github.com/ms-jagadeeshan/launch-meet/issues
             if (ev.title == evd.title)
             {
                 std::cout << "Enter the Event Title: ";
-                std::cin >> ev.title;
+                getline(std::cin >> std::ws, ev.title);
             }
             if (ev.browser == evd.browser)
             {
@@ -966,7 +969,7 @@ Report bugs at https://github.com/ms-jagadeeshan/launch-meet/issues
             if (ev.url == evd.url)
             {
                 std::cout << "Enter the meet url: ";
-                std::cin >> ev.url;
+                getline(std::cin >> std::ws, ev.url);
             }
             if (ev.authuser == evd.authuser)
             {
@@ -980,7 +983,7 @@ Report bugs at https://github.com/ms-jagadeeshan/launch-meet/issues
             if (ev.description == evd.description)
             {
                 std::cout << "Enter the Event description: ";
-                std::cin >> ev.description;
+                getline(std::cin >> std::ws, ev.description);
             }
             if (ev.expiry_date == evd.expiry_date)
             {
@@ -1030,7 +1033,7 @@ Report bugs at https://github.com/ms-jagadeeshan/launch-meet/issues
         if (ev.url == evd.url)
         {
             std::cout << "Enter the meet url: ";
-            std::cin >> ev.url;
+            getline(std::cin >> std::ws, ev.url);
         }
 
         if (ev.timings.empty())
