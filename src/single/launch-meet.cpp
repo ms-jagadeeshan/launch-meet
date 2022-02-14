@@ -77,7 +77,7 @@ namespace lmspace
     void list2json(nlohmann::json &j, const std::list<lmspace::timings> &event_list_cache);
     void loadCache(std::list<lmspace::timings> &event_list_cache, std::map<std::string, lmspace::details> &event_details_cache);
     void map2json(nlohmann::json &j, const std::map<std::string, lmspace::details> &event_details_cache);
-    void printDetails(const lmspace::timings &e, const lmspace::details &d);
+    void printDetails(const lmspace::timings &e, const lmspace::details &d, const time_t join_before);
     void updateSingleCache(nlohmann::detail::iter_impl<nlohmann::json> &event_ptr, std::list<lmspace::timings> &event_list_cache, std::map<std::string, lmspace::details> &event_details_cache);
     void updateCache(std::list<lmspace::timings> &event_list_cache, std::map<std::string, lmspace::details> &event_details_cache);
     void updateDaysCache(nlohmann::detail::iter_impl<nlohmann::json> &event_ptr, std::list<lmspace::timings> &event_list_cache, std::map<std::string, lmspace::details> &event_details_cache, int rep_interval);
@@ -209,21 +209,22 @@ namespace lmspace
         }
     }
 
-    void printDetails(const lmspace::timings &e, const lmspace::details &d)
+    void printDetails(const lmspace::timings &e, const lmspace::details &d, const time_t join_before = 500)
     {
         time_t start_epoch = 0, end_epoch = 0, cur_epoch = 0;
         time(&cur_epoch);
         start_epoch = stringToEpoch(e.start);
         end_epoch = stringToEpoch(e.end);
-        if (cur_epoch < start_epoch)
+        time_t diff = start_epoch - (cur_epoch + join_before);
+        if (diff > 0)
         {
             std::cout << "Next Event Details\n";
             std::cout << "Title      : " << d.title << '\n';
             std::cout << "Description: " << d.description << '\n';
             std::cout << "Start time : " << asctime(localtime(&start_epoch));
             std::cout << "End  time  : " << asctime(localtime(&end_epoch));
-            std::cout << "Waiting " << (start_epoch - cur_epoch) / 60 << " minutes..." << std::endl;
-            sleep(start_epoch - cur_epoch);
+            std::cout << "Waiting " << diff / 60 << " minutes..." << std::endl;
+            sleep(diff);
             std::cout << "Opening \"" << d.url << "\"\n\n";
         }
         else if (cur_epoch < end_epoch)
@@ -239,7 +240,18 @@ namespace lmspace
 
     void launchEvent(const lmspace::timings &e, const lmspace::details &d)
     {
-        lmspace::printDetails(e, d);
+        nlohmann::json j;
+        std::ifstream input(CONFIG_FILE_PATH);
+        if (!input.is_open())
+        {
+            std::cerr << "launch-meet : cannot access \'" << EVENT_FILE_PATH << "\' : " << strerror(errno) << '\n';
+            exit(1);
+        }
+        input >> j;
+        input.close();
+        time_t join_before = j["join_before"].get<long>();
+
+        lmspace::printDetails(e, d, join_before);
         std::string path, exec_name;
         if (d.browser == "default")
         {
@@ -323,7 +335,7 @@ namespace lmspace
     void map2json(nlohmann::json &j, const std::map<std::string, lmspace::details> &event_details_cache)
     {
         for (std::map<std::string, lmspace::details>::const_iterator itr = event_details_cache.begin(); itr != event_details_cache.end(); ++itr)
-            j[itr->first] = {{"authuser", itr->second.authuser}, {"description", itr->second.description}, {"title", itr->second.browser}, {"browser", itr->second.browser}, {"url", itr->second.url}};
+            j[itr->first] = {{"authuser", itr->second.authuser}, {"browser", itr->second.browser}, {"description", itr->second.description}, {"title", itr->second.title}, {"url", itr->second.url}};
         // std::cout<<j.dump(4);
     }
 
