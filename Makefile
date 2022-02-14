@@ -30,6 +30,9 @@ purge:
 	@rm -rvf "${HOME}/.cache/launch-meet"
 	@rm -rvf "${HOME}/.config/launch-meet"
 
+rm_cache:
+	@rm -rvf "${HOME}/.cache/launch-meet"
+
 reinstall: uninstall install
 
 launch-meet_single: $(SRC_S)/launch-meet.cpp
@@ -44,4 +47,4 @@ launch-meet_single: $(SRC_S)/launch-meet.cpp
 # two.o: launch-meet.cpp
 # 	$(CXX) $(CXXFLAGS) -o $@ -c $^
 
-.PHONY: all install uninstall reinstall build
+.PHONY: all install uninstall reinstall build rm_cache
